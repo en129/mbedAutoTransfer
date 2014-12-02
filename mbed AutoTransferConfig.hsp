@@ -1,0 +1,84 @@
+//参考
+//http://www.rinku.zaq.ne.jp/ultimate/tips/file/dat6.htm
+
+#include "hspext.as"
+#uselib "kernel32.dll"
+#cfunc global WritePrivateProfileString "WritePrivateProfileStringA" sptr, sptr, sptr, sptr
+#func  global GetPrivateProfileString "GetPrivateProfileStringA" sptr, sptr, sptr, var, int, sptr
+
+#module
+#defcfunc setini str file, str section, str key, str value, local s
+	s = section, key, value, file
+	return WritePrivateProfileString(s.0, s.1, s.2, s.3)
+
+#defcfunc getini str file, str section, str key, str defvalue, int maxsize, local s
+	sdim s, maxsize, 5
+	s = section, key, defvalue, "", file
+	GetPrivateProfileString s.0, s.1, s.2, s.3, maxsize, s.4
+	return s.3
+#global
+	
+	title "ConfigTool"
+	screen 0, 300, 150, screen_fixedsize
+	color 240,240,240
+	boxf
+	color
+	
+	sdim INIfilePath,100
+	INIfilePath = dir_cur + "\\" + "settings.ini"
+	
+	sdim checkPath,100
+	checkPath = getini(INIfilePath, "Section0" , "Path" , "0", 256)
+	
+	sdim LastUseDrv,10
+	sdim NoticePath,100 : sdim NoticeFileName,50
+	
+	if(checkPath = "0") {
+		checkPath = dirinfo($10000);デスクトップをデフォルトパスに指定
+		NoticePath = dir_cur + "\\" + "通知音.MP3"
+		f_noticeSound = 1
+		LastUseDrv = ""
+	}else{
+		f_noticeSound = int(getini(INIfilePath, "Section0" , "notice" , "", 16))
+		NoticePath = getini(INIfilePath, "Section0" , "UseNoticePath" , "", 256)
+		LastUseDrv = getini(INIfilePath, "Section0" , "LastUseDrive" , "", 16)
+	}
+
+	NoticeFileName = getpath(NoticePath,11)
+
+	pos 10,10 : objsize 100 : button gosub "監視フォルダ設定",*selectFolder
+	pos 10,40 : mesbox checkPath,200,20,4
+	Pathmesbox_id = stat
+	
+	pos 10,70 : objsize 200 : chkbox "ファイル転送完了時に通知音を鳴らす",f_noticeSound
+	pos 10,95 : objsize 100 : button gosub "通知音設定",*selectNotice
+	pos 10,125 : mesbox NoticeFileName,200,20,4
+	Noticemesbox_id = stat
+	
+	pos 230,10 : objsize 60,80 : button "設定保存",*save
+	stop
+
+*selectFolder
+	selfolder checkPath,"監視フォルダを指定してください"
+	objprm Pathmesbox_id,checkPath
+	return
+
+*selectNotice
+	dialog "*",16,"音楽ファイル"
+	if (stat = 1){
+		NoticePath = refstr
+		NoticeFileName = getpath(NoticePath,11)
+		objprm Noticemesbox_id,NoticeFileName
+	}
+	return
+
+*save
+	ret = 1
+	ret = ret & setini(INIfilePath, "Section0" , "Path" , checkPath )
+	ret = ret & setini(INIfilePath, "Section0" , "notice" , str(f_noticeSound))
+	ret = ret & setini(INIfilePath, "Section0" , "UseNoticePath" , NoticePath)
+	ret = ret & setini(INIfilePath, "Section0" , "LastUseDrive" , LastUseDrv)
+	if (ret = 0) : dialog "INIファイルの保存に失敗しました",1
+	dialog "保存しました"
+	stop
+	

@@ -1,0 +1,215 @@
+;参考
+;http://hsp.tv/play/pforum.php?mode=pastwch&num=16329
+;http://www.rinku.zaq.ne.jp/ultimate/tips/file/dat6.htm
+
+#include "ppshow.as"
+#include "hspext.as"
+#uselib "kernel32.dll"
+#cfunc global WritePrivateProfileString "WritePrivateProfileStringA" sptr, sptr, sptr, sptr
+#func  global GetPrivateProfileString "GetPrivateProfileStringA" sptr, sptr, sptr, var, int, sptr
+
+#module
+#defcfunc setini str file, str section, str key, str value, local s
+	s = section, key, value, file
+	return WritePrivateProfileString(s.0, s.1, s.2, s.3)
+
+#defcfunc getini str file, str section, str key, str defvalue, int maxsize, local s
+	sdim s, maxsize, 5
+	s = section, key, defvalue, "", file
+	GetPrivateProfileString s.0, s.1, s.2, s.3, maxsize, s.4
+	return s.3
+#global
+
+	onexit goto *exit_proc					;右上バツボタンを押されたときのジャンプ先
+	title "mbed AutoTransfer"				;ウィンドウタイトル設定
+	screen 0, 300, 100, screen_fixedsize	;ウィンドウサイズ設定
+	color 240,240,240						;ウィンドウ内デフォルトカラー設定
+	boxf									;ウィンドウ内をデフォルトカラーで塗りつぶし
+	color									;カラーを黒(0,0,0)に変更（文字の描画用
+	
+	;設定ファイル用の変数宣言
+	sdim INIfilePath,100		;INIファイルのパス
+	sdim checkFolderPath,100	;監視対象パス
+	sdim LastUseDrive,10		;最後に使ったドライブレター
+	sdim NoticePath,100			;通知音のパス
+	
+	;INIファイルパス設定.exeファイルと同じところに
+	INIfilePath = dir_cur + "\\" + "settings.ini"
+	
+	;監視対象パス読み込み
+	checkFolderPath = getini(INIfilePath, "Section0" , "Path" , "N", 256)
+	if (checkFolderPath = "N") {			;読み込めなかった＝INIファイルがないので設定ツール起動
+		dialog "設定ファイルがありません。設定ツールを起動します。",1
+		exec "Config.exe"
+		end
+	}else{									;残りの設定読み込み（通知音・最後に使ったドライブレター）
+		f_notice = int( getini(INIfilePath, "Section0" , "notice" , "", 16) )
+		NoticePath = getini(INIfilePath, "Section0" , "UseNoticePath" , "", 256)
+		LastUseDrive = getini(INIfilePath, "Section0" , "LastUseDrive" , "", 16)
+	}
+	
+	;通知音用ファイルをオープン
+	psopen NoticePath
+	
+	sdim driveInfo,100,10	;使用できるドライブレター一覧用の変数宣言
+	sdim driveInfoList,100	;使用できるドライブレターとボリュームラベルの保存用変数宣言
+	driveInfoCnt=0			;使用できるドライブ数のカウントを0で初期化
+
+	sdim targetFileName,64		; *.binにヒットしたファイル名
+	sdim targetFileName_part,64	; *.bin.partにヒットしたファイル名
+
+	;PCのドライブをA～Zまで順に調査
+	repeat 26
+
+		;初期化
+		drive_let=""
+		drive_vol=""
+		drive_typ=0
+		drive_fsys=0
+	
+		;ドライブレターと対応する番号の取得
+		drive_n=cnt+1
+	
+		;ドライブタイプの取得
+		;リムーバブル以外は弾いている
+		fxinfo drive_typ,drive_n,8
+		if (drive_typ!2 ) : goto *chkskip
+	
+		;使用ファイルシステム情報の取得
+		;0=不明・・・接続されていないので弾く
+		fxinfo drive_fsys,drive_n,20
+		if (drive_fsys=0) : goto *chkskip
+	
+		;ドライブレターの取得
+		drive_let="?"
+		poke drive_let,0,64+drive_n
+		
+		;ボリュームラベルの取得
+		fxinfo drive_vol,drive_n,16
+		if stat : goto *chkskip ;ボリュームラベルの取得に失敗したら弾く
+		
+		;Win上でリムーバブルディスクと表示＝ボリュームラベルなし
+		if (drive_vol="") : drive_vol = "リムーバブル ディスク"	
+		
+		;使用できるドライブレターの保存
+		driveInfo(driveInfoCnt) = drive_let
+		
+		;コンボボックス用にドライブレターとボリュームラベルの保存
+		driveInfoList = driveInfoList + drive_let + "：" + drive_vol + "\n"
+		
+		driveInfoCnt = driveInfoCnt + 1
+
+*chkskip
+	loop
+	pos 10,10 : mes "転送先のドライブ"
+	
+	seletDrive = 0
+	pos 10,40 : objsize 150 : combox seletDrive,100,driveInfoList	//ドライブ選択用コンボボックスを配置	
+	;コンボボックスのID保存
+	id_cobox_SelDrv = stat
+
+	repeat driveInfoCnt
+		;前回使用したドライブがあれば自動で選択
+		if ( (LastUseDrive ! "") & (LastUseDrive = driveInfo(cnt)) ) : objprm id_cobox_SelDrv,cnt
+	loop
+
+	pos 200,10 : chkbox "ISPモード",fISP_mode
+	id_chkbox_ISP = stat
+	
+	pos 200,30 : chkbox "自動リセット",fAuto_reset 
+	id_chkbox_Resrt = stat
+	
+	ComList = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20"
+	pos 200,56 : font msgothic, 16, font_normal : mes "COM" : sysfont 0
+	pos 230,55 : objsize 40 : combox seletCom,100,ComList	//ドライブ選択用コンボボックスを配置
+	id_cobox_com = stat
+
+///////////////↑ここまで起動時の処理////////////////////////////////
+
+	;リムーバブルドライブを検出できなかったら終了する
+	if(driveInfoCnt = 0) {
+		dialog "転送できるドライブがありません。終了します。",1
+		end
+	}
+*MAIN
+	redraw 0 ;画面更新の停止
+	
+	;ステータスメッセージの消去
+	color 240,240,240 : boxf 10,70,300,90
+	color
+	
+	;カレントフォルダをiniファイルで指定したフォルダに変更
+	chdir checkFolderPath
+	;binファイルとbin.partファイルの探索
+	dirlist targetFileName_part,"*.part"
+	dirlist targetFileName,"*.bin"
+	
+	;\r\nついてるので削除
+	targetFileName = strmid(targetFileName,0, (strlen(targetFileName)-2) )
+	targetFileName_part = strmid(targetFileName_part,0, (strlen(targetFileName_part)-2) )
+	
+	if (targetFileName ! "") {
+		if (targetFileName_part = "") {
+			pos 10,70 : mes "ステータス：移動完了"
+			goto *fileMove
+		}else{
+			FindResult = instr(targetFileName_part,0,strmid(targetFileName,0, (strlen(targetFileName)-4) ))
+			if( FindResult!-1 ) {
+				pos 10,70 : mes "ステータス：ダウンロード完了待ち"
+			}
+		}
+	}else{
+		pos 10,70 : mes "ステータス：待機中"
+	}
+	
+	redraw 1	;画面更新の再開
+	wait 100	;1000ms待機
+	goto *MAIN
+
+*fileMove
+	;ドライブレターから対応するドライブ番号に変換
+	i=(peek(driveInfo(seletDrive),0) - 64)
+
+	;移動先のドライブをチェック
+	fxinfo drive_typ,i,8
+	if (drive_typ!2 ) {
+		dialog "指定したドライブがありません。終了します。",1
+		goto *exit_proc
+	}
+
+	;移動先のファイルパス作成
+	sdim targetDrivePath,10
+	targetDrivePath = driveInfo(seletDrive) + ":\\"
+
+	if (fISP_mode = 0) {	;通常モード
+		;ファイルコピー(同名では上書き)
+		bcopy targetFileName,(targetDrivePath+targetFileName)
+	} else {				;ISPモード
+		;ファイルコピー(同名では上書き)
+		bcopy targetFileName,(targetDrivePath+"bin")
+	}
+	delete targetFileName	;onlineIDEからダウンロードしたファイルを削除
+
+	;自動リセット
+	if (fAuto_reset = 1) {
+		wait 100
+		;COMポートオープン
+		comopen (seletCom+1),"baud=9600 parity=N data=8 stop=1"
+		;COMポートエラー時
+		if stat : dialog "シリアルポートは使えません" : end	
+		comcontrol 8	;SET Break
+		wait 1
+		comcontrol 9	;CLR Break
+		comclose		;COMポート開放
+	}
+
+	;通知音再生
+	if (f_notice = 1) :	psplay
+	;ファイル探索へ戻る
+	goto *MAIN
+	stop
+
+*exit_proc
+	ret = setini(INIfilePath, "Section0" , "LastUseDrive" , driveInfo(seletDrive))
+	if (ret = 0) : dialog "INIファイルの保存に失敗しました",1
+	end
