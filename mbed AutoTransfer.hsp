@@ -113,16 +113,20 @@
 		if ( (LastUseDrive ! "") & (LastUseDrive = driveInfo(cnt)) ) : objprm id_cobox_SelDrv,cnt
 	loop
 
-	pos 200,10 : chkbox "ISPモード",fISP_mode
+	pos 200,5 : chkbox "イレースモード",fOver_write 
+	id_chkbox_OverWeite = stat
+
+	pos 200,70 : chkbox "ISPモード",fISP_mode
 	id_chkbox_ISP = stat
 	
-	pos 200,30 : chkbox "自動リセット",fAuto_reset 
+	pos 200,25 : chkbox "自動リセット",fAuto_reset 
 	id_chkbox_Resrt = stat
 	
 	ComList = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20"
-	pos 200,56 : font msgothic, 16, font_normal : mes "COM" : sysfont 0
-	pos 230,55 : objsize 40 : combox seletCom,100,ComList	//ドライブ選択用コンボボックスを配置
-	id_cobox_com = stat
+	pos 200,51 : font msgothic, 16, font_normal : mes "COM" : sysfont 0
+	pos 230,50 : objsize 40 : combox seletCom,100,ComList	//COMポート選択用コンボボックスを配置
+	id_cobox_com = stat										//COMポートコンボボックスIDの保存
+
 
 ///////////////↑ここまで起動時の処理////////////////////////////////
 
@@ -181,6 +185,20 @@
 	sdim targetDrivePath,10
 	targetDrivePath = driveInfo(seletDrive) + ":\\"
 
+	if(fOver_write = 1){								//binファイルイレースモード
+		chdir targetDrivePath							//mbedドライブにカレントディレクトリを移動
+		repeat
+			dirlist targetDellFileNames,"*.bin"			//binファイル検索
+			DelfileCnt = stat							//検索結果のカウント値を保存
+			if(DelfileCnt=0):break						//0ならbreak
+			getstr dellFileName,targetDellFileNames,0	//検索結果一覧より１つのファイル名を抽出
+			delete dellFileName							//ファイル削除
+		loop
+	}
+
+	;カレントフォルダをiniファイルで指定したフォルダに変更
+	chdir checkFolderPath
+	
 	if (fISP_mode = 0) {	;通常モード
 		;ファイルコピー(同名では上書き)
 		bcopy targetFileName,(targetDrivePath+targetFileName)
